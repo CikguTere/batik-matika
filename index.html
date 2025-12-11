@@ -60,6 +60,9 @@
 
     <script>
         window.onerror = function(message, source, lineno, colno, error) {
+            // Ignore benign resize loop error
+            if (message && message.includes("ResizeObserver loop")) return;
+            
             const container = document.getElementById('error-container');
             container.style.display = 'block';
             container.innerHTML = `<strong>Error Terdeteksi:</strong><br>${message}<br><small>${source}:${lineno}</small>`;
@@ -88,7 +91,82 @@
             serverTimestamp 
         } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
-        // --- ICONS ---
+        // ==========================================
+        // 1. DATA & KONSTANTA (DEFINISI DI AWAL)
+        // ==========================================
+
+        const PROVINCES = [
+            "Semua Provinsi", "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau", "Jambi", 
+            "Sumatera Selatan", "Bengkulu", "Lampung", "DKI Jakarta", "Jawa Barat", 
+            "Jawa Tengah", "DI Yogyakarta", "Jawa Timur", "Banten", "Bali", 
+            "Nusa Tenggara Barat", "Nusa Tenggara Timur", "Kalimantan Barat", 
+            "Kalimantan Tengah", "Kalimantan Selatan", "Kalimantan Timur", 
+            "Kalimantan Utara", "Sulawesi Utara", "Sulawesi Tengah", "Sulawesi Selatan", 
+            "Sulawesi Tenggara", "Gorontalo", "Sulawesi Barat", "Maluku", 
+            "Maluku Utara", "Papua Barat", "Papua"
+        ];
+
+        const BATIKS = [
+            { id: 'kawung', name: 'Kawung', price: 0, mathConcept: 'Geometri: Interseksi Lingkaran', pattern: 'circles', baseScore: 100, penalty: 0, ruleDesc: "Benar: 100 (Spesial 200). Salah: -0." },
+            { id: 'megamendung', name: 'Megamendung', price: 2500, mathConcept: 'Fraktal: Kurva & Skala Berulang', pattern: 'clouds', baseScore: 150, penalty: 100, ruleDesc: "Benar: 150 (Spesial 300). Salah: -100." },
+            { id: 'parang', name: 'Parang Rusak', price: 5000, mathConcept: 'Geometri: Garis Sejajar & Kemiringan', pattern: 'diagonal', baseScore: 200, penalty: 150, ruleDesc: "Benar: 200 (Spesial 400). Salah: -150." },
+            { id: 'truntum', name: 'Truntum', price: 10000, mathConcept: 'Geometri: Pola Bintang & Sudut Pusat', pattern: 'stars', baseScore: 500, penalty: 300, ruleDesc: "Benar: 500 (Spesial 1000). Salah: -300." },
+        ];
+
+        const RANKS = [
+            { min: 0, title: "Pemula Batik", color: "text-slate-600" },
+            { min: 1000, title: "Pengrajin Muda", color: "text-green-600" },
+            { min: 5000, title: "Ahli Canting", color: "text-blue-600" },
+            { min: 10000, title: "Maestro Batik", color: "text-purple-600" },
+            { min: 25000, title: "Legenda Nusantara", color: "text-amber-500" },
+        ];
+
+        const MAX_LEVEL_TO_WIN = 3; 
+
+        // ==========================================
+        // 2. KONFIGURASI (FIREBASE & APPS SCRIPT)
+        // ==========================================
+
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEwGfKCqaFEUphLjCc6zGYKX0yBXEX56IeP7yHb1ZPD2VsU_P0ML6Hb6xMjdGBiQGtgg/exec"; 
+
+        // ⚠️ PASTIKAN BAGIAN INI DIISI DENGAN DATA DARI FIREBASE CONSOLE ANDA
+        let firebaseConfig = {
+            apiKey: "ISI_API_KEY_ANDA_DISINI",
+            authDomain: "ISI_PROJECT_ID_ANDA.firebaseapp.com",
+            projectId: "ISI_PROJECT_ID_ANDA",
+            storageBucket: "ISI_PROJECT_ID_ANDA.appspot.com",
+            messagingSenderId: "ISI_MESSAGING_ID",
+            appId: "ISI_APP_ID"
+        };
+
+        if (typeof __firebase_config !== 'undefined') {
+            try {
+                firebaseConfig = JSON.parse(__firebase_config);
+            } catch(e) {
+                console.log("Menggunakan config manual/default");
+            }
+        }
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'batik-matika-html';
+        
+        let app, auth, db;
+        let firebaseInitError = null;
+
+        try {
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "ISI_API_KEY_ANDA_DISINI") {
+                throw new Error("Konfigurasi Firebase belum diisi! Silakan edit file index.html dan isi firebaseConfig dengan data dari Firebase Console.");
+            }
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch(e) {
+            console.error("Firebase Init Error", e);
+            firebaseInitError = e.message;
+        }
+
+        // ==========================================
+        // 3. ICON COMPONENTS
+        // ==========================================
         const IconBase = ({ children, size = 24, className = "", ...props }) => (
             React.createElement('svg', { 
                 xmlns: "http://www.w3.org/2000/svg", 
@@ -183,89 +261,12 @@
             React.createElement('polyline', { key: 'p2', points: "16 17 21 12 16 7" }),
             React.createElement('line', { key: 'l1', x1: "21", y1: "12", x2: "9", y2: "12" })
         ]);
-        const Info = (props) => React.createElement(IconBase, props, [
-            React.createElement('circle', { key: 'c1', cx: "12", cy: "12", r: "10" }),
-            React.createElement('line', { key: 'l1', x1: "12", y1: "16", x2: "12", y2: "12" }),
-            React.createElement('line', { key: 'l2', x1: "12", y1: "8", x2: "12.01", y2: "8" })
-        ]);
-        const Award = (props) => React.createElement(IconBase, props, [
-            React.createElement('circle', { key: 'c1', cx: "12", cy: "8", r: "7" }),
-            React.createElement('polyline', { key: 'p1', points: "8.21 13.89 7 23 12 20 17 23 15.79 13.88" })
-        ]);
-        const Download = (props) => React.createElement(IconBase, props, [
-            React.createElement('path', { key: 'p1', d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
-            React.createElement('polyline', { key: 'p2', points: "7 10 12 15 17 10" }),
-            React.createElement('line', { key: 'l1', x1: "12", y1: "15", x2: "12", y2: "3" })
-        ]);
 
-        // --- FIREBASE CONFIGURATION (PENTING!) ---
-        let firebaseConfig = {
-            apiKey: "AIzaSyBaTbQh1C8ZvDSV-v5koqhfAbmxnHyHzlQ",
-            authDomain: "batik-matika.firebaseapp.com",
-            projectId: "batik-matika",
-            storageBucket: "batik-matika.firebasestorage.app",
-            messagingSenderId: "769336542042",
-            appId: "1:769336542042:web:2bad62836a3be480036963"
-        };
 
-        if (typeof __firebase_config !== 'undefined') {
-            try {
-                firebaseConfig = JSON.parse(__firebase_config);
-            } catch(e) {
-                console.log("Menggunakan config manual/default");
-            }
-        }
+        // ==========================================
+        // 4. HELPER & GAME COMPONENTS
+        // ==========================================
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'batik-matika-html';
-        
-        let app, auth, db;
-        let firebaseError = null;
-
-        try {
-            if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "ISI_API_KEY_ANDA_DISINI") {
-                throw new Error("Konfigurasi Firebase belum diisi! Silakan edit file index.html dan isi firebaseConfig.");
-            }
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        } catch(e) {
-            console.error("Firebase Init Error", e);
-            firebaseError = e.message;
-        }
-
-        // --- CONSTANTS ---
-        const MAX_LEVEL_TO_WIN = 3; 
-
-        const PROVINCES = [
-            "Semua Provinsi", "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau", "Jambi", 
-            "Sumatera Selatan", "Bengkulu", "Lampung", "DKI Jakarta", "Jawa Barat", 
-            "Jawa Tengah", "DI Yogyakarta", "Jawa Timur", "Banten", "Bali", 
-            "Nusa Tenggara Barat", "Nusa Tenggara Timur", "Kalimantan Barat", 
-            "Kalimantan Tengah", "Kalimantan Selatan", "Kalimantan Timur", 
-            "Kalimantan Utara", "Sulawesi Utara", "Sulawesi Tengah", "Sulawesi Selatan", 
-            "Sulawesi Tenggara", "Gorontalo", "Sulawesi Barat", "Maluku", 
-            "Maluku Utara", "Papua Barat", "Papua"
-        ];
-
-        const BATIKS = [
-            { id: 'kawung', name: 'Kawung', price: 0, mathConcept: 'Geometri: Interseksi Lingkaran', pattern: 'circles', baseScore: 100, penalty: 0, ruleDesc: "Benar: 100 (Spesial 200). Salah: -0." },
-            { id: 'megamendung', name: 'Megamendung', price: 2500, mathConcept: 'Fraktal: Kurva & Skala Berulang', pattern: 'clouds', baseScore: 150, penalty: 100, ruleDesc: "Benar: 150 (Spesial 300). Salah: -100." },
-            { id: 'parang', name: 'Parang Rusak', price: 5000, mathConcept: 'Geometri: Garis Sejajar & Kemiringan', pattern: 'diagonal', baseScore: 200, penalty: 150, ruleDesc: "Benar: 200 (Spesial 400). Salah: -150." },
-            { id: 'truntum', name: 'Truntum', price: 10000, mathConcept: 'Geometri: Pola Bintang & Sudut Pusat', pattern: 'stars', baseScore: 500, penalty: 300, ruleDesc: "Benar: 500 (Spesial 1000). Salah: -300." },
-        ];
-
-        const RANKS = [
-            { min: 0, title: "Pemula Batik", color: "text-slate-600" },
-            { min: 1000, title: "Pengrajin Muda", color: "text-green-600" },
-            { min: 5000, title: "Ahli Canting", color: "text-blue-600" },
-            { min: 10000, title: "Maestro Batik", color: "text-purple-600" },
-            { min: 25000, title: "Legenda Nusantara", color: "text-amber-500" },
-        ];
-
-        // --- GOOGLE APPS SCRIPT CONFIG ---
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEwGfKCqaFEUphLjCc6zGYKX0yBXEX56IeP7yHb1ZPD2VsU_P0ML6Hb6xMjdGBiQGtgg/exec"; 
-
-        // --- UTILS: SOUND & GAMEPLAY ---
         const playExplosionSound = () => {
             try {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -305,7 +306,6 @@
             } catch (e) { console.error(e); }
         };
 
-        // --- COMPONENTS ---
         const BatikPattern = ({ type, className, style }) => {
             let bg = {};
             if (type === 'circles') bg = { backgroundImage: 'radial-gradient(circle at 50% 50%, transparent 55%, #8b4513 56%, #8b4513 60%, transparent 61%), radial-gradient(circle at 0% 0%, transparent 55%, #8b4513 56%, #8b4513 60%, transparent 61%), radial-gradient(circle at 100% 0%, transparent 55%, #8b4513 56%, #8b4513 60%, transparent 61%), radial-gradient(circle at 100% 100%, transparent 55%, #8b4513 56%, #8b4513 60%, transparent 61%), radial-gradient(circle at 0% 100%, transparent 55%, #8b4513 56%, #8b4513 60%, transparent 61%)', backgroundSize: '40px 40px' };
@@ -333,72 +333,14 @@
             );
         };
 
-        // --- CERTIFICATE COMPONENT ---
-        const CertificateView = ({ user, onClose }) => {
-            const canvasRef = useRef(null);
-            const drawCertificate = () => {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
-                const width = canvas.width;
-                const height = canvas.height;
-                ctx.fillStyle = '#FFFFFF';
-                ctx.fillRect(0, 0, width, height);
-                ctx.fillStyle = '#92400E'; 
-                const borderSize = 40;
-                for(let x=0; x<width; x+=borderSize) {
-                    for(let y=0; y<height; y+=borderSize) {
-                        if (x < borderSize || x > width - borderSize*2 || y < borderSize || y > height - borderSize*2) {
-                            ctx.beginPath();
-                            ctx.arc(x + borderSize/2, y + borderSize/2, borderSize/2 - 2, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                }
-                ctx.fillStyle = '#FFFBEB'; 
-                ctx.fillRect(borderSize, borderSize, width - borderSize*2, height - borderSize*2);
-                ctx.strokeStyle = '#B45309';
-                ctx.lineWidth = 5;
-                ctx.strokeRect(borderSize + 10, borderSize + 10, width - borderSize*2 - 20, height - borderSize*2 - 20);
-                ctx.textAlign = 'center';
-                ctx.fillStyle = '#78350F';
-                ctx.font = 'bold 50px serif';
-                ctx.fillText('SERTIFIKAT PENGHARGAAN', width/2, 120);
-                ctx.fillStyle = '#92400E';
-                ctx.font = '24px sans-serif';
-                ctx.fillText('Diberikan kepada Pembatik Cilik:', width/2, 170);
-                ctx.font = 'italic bold 60px cursive'; 
-                ctx.fillText(user.name, width/2, 250);
-                ctx.beginPath();
-                ctx.moveTo(width/2 - 200, 270);
-                ctx.lineTo(width/2 + 200, 270);
-                ctx.stroke();
-                ctx.font = '20px sans-serif';
-                ctx.fillStyle = '#4B5563';
-                ctx.fillText(`Atas keberhasilannya menyelesaikan seluruh level`, width/2, 320);
-                ctx.fillText(`dalam permainan edukasi Batik Matika.`, width/2, 350);
-                ctx.font = 'bold 24px monospace';
-                ctx.fillStyle = '#059669'; 
-                ctx.fillText(`TOTAL SKOR: ${user.points}`, width/2, 420);
-                ctx.font = '16px sans-serif';
-                ctx.fillStyle = '#6B7280';
-                const dateStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-                ctx.fillText(`${user.school} • ${dateStr}`, width/2, 460);
-                ctx.font = '40px serif';
-                ctx.fillText('🏅', width/2, 530);
-            };
-
-            useEffect(() => { drawCertificate(); }, []);
-            const downloadJPG = () => { const canvas = canvasRef.current; const link = document.createElement('a'); link.download = `Sertifikat_BatikMatika_${user.name}.jpg`; link.href = canvas.toDataURL('image/jpeg', 0.9); link.click(); };
-            const downloadPDF = () => { const canvas = canvasRef.current; const imgData = canvas.toDataURL('image/jpeg', 0.9); const { jsPDF } = window.jspdf; const doc = new jsPDF('l', 'px', [canvas.width, canvas.height]); doc.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height); doc.save(`Sertifikat_BatikMatika_${user.name}.pdf`); };
-            return React.createElement('div', { className: "fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-auto" }, React.createElement('div', { className: "bg-white p-4 rounded-2xl max-w-4xl w-full flex flex-col items-center gap-4" }, React.createElement('h2', { className: "text-2xl font-bold text-amber-900" }, "Selamat! Kamu Tamat!"), React.createElement('canvas', { ref: canvasRef, width: 800, height: 600, className: "w-full h-auto border shadow-lg rounded" }), React.createElement('div', { className: "flex gap-4 w-full justify-center" }, React.createElement('button', { onClick: downloadJPG, className: "flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700" }, React.createElement(Download, { size: 20 }), "Simpan JPG"), React.createElement('button', { onClick: downloadPDF, className: "flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700" }, React.createElement(Download, { size: 20 }), "Simpan PDF")), React.createElement('button', { onClick: onClose, className: "text-gray-500 hover:text-gray-800 underline mt-2" }, "Tutup & Kembali ke Menu")));
-        };
-
-        // --- MAIN APP ---
+        // ==========================================
+        // 5. MAIN APP COMPONENT
+        // ==========================================
         function App() {
             const [user, setUser] = useState(null);
             const [userData, setUserData] = useState(null);
             const [view, setView] = useState('loading');
-            const [showCertificateModal, setShowCertificateModal] = useState(false); 
+            const [authError, setAuthError] = useState(null);
             
             const [activeBatik, setActiveBatik] = useState(BATIKS[0]);
             const [level, setLevel] = useState(1);
@@ -421,13 +363,92 @@
             const [leaderboardFilter, setLeaderboardFilter] = useState({ province: 'Semua Provinsi', school: '', minLevel: 1, minScore: 0, sortBy: 'scoreDesc' });
             const [loginForm, setLoginForm] = useState({ name: '', province: PROVINCES[1], school: '' });
 
-            useEffect(() => { if (firebaseError) { setView('error'); return; } if(!auth) return; const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } else { await signInAnonymously(auth); } }; initAuth(); let unsubscribeProfile = null; const unsubscribeAuth = onAuthStateChanged(auth, (u) => { setUser(u); if (unsubscribeProfile) { unsubscribeProfile(); unsubscribeProfile = null; } if (u) { const userRef = doc(db, 'artifacts', appId, 'users', u.uid, 'profile', 'main'); unsubscribeProfile = onSnapshot(userRef, (snap) => { if (snap.exists()) { setUserData(snap.data()); setView(v => (v === 'loading' || v === 'landing' || v === 'login') ? 'menu' : v); } else { setView(v => v === 'loading' ? 'landing' : v); } }, (error) => { console.log("Snapshot listener stopped:", error.message); }); } else { setUserData(null); setView('landing'); } }); return () => { if (unsubscribeProfile) unsubscribeProfile(); unsubscribeAuth(); }; }, []);
+            useEffect(() => { 
+                if (firebaseInitError) {
+                    setAuthError(firebaseInitError);
+                    setView('error');
+                    return;
+                }
+                
+                if(!auth) return;
+                
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { 
+                            await signInWithCustomToken(auth, __initial_auth_token); 
+                        } else { 
+                            await signInAnonymously(auth); 
+                        }
+                    } catch(err) {
+                        console.error("Auth Init Error:", err);
+                        if (err.code === 'auth/admin-restricted-operation') {
+                            setAuthError("Fitur 'Anonymous Sign-in' belum diaktifkan di Firebase Console. Silakan buka Console > Authentication > Sign-in method > Aktifkan Anonymous.");
+                        } else {
+                            setAuthError(err.message);
+                        }
+                        setView('error');
+                    }
+                };
+                initAuth();
+
+                let unsubscribeProfile = null;
+
+                const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    
+                    if (unsubscribeProfile) {
+                        unsubscribeProfile();
+                        unsubscribeProfile = null;
+                    }
+
+                    if (u) {
+                        const userRef = doc(db, 'artifacts', appId, 'users', u.uid, 'profile', 'main');
+                        unsubscribeProfile = onSnapshot(userRef, (snap) => {
+                            if (snap.exists()) { 
+                                setUserData(snap.data()); 
+                                setView(v => (v === 'loading' || v === 'landing' || v === 'login') ? 'menu' : v); 
+                            } else { 
+                                setView(v => v === 'loading' ? 'landing' : v); 
+                            }
+                        }, (error) => {
+                            console.error("Snapshot error:", error);
+                            // Fallback jika pembacaan database gagal, agar tidak stuck di loading
+                            setUserData(null);
+                            setView('landing'); 
+                        });
+                    } else {
+                        setUserData(null);
+                        setView('landing'); 
+                    }
+                });
+
+                // Safety timeout: Jika dalam 10 detik masih loading, force ke landing (misal koneksi lambat)
+                const safetyTimeout = setTimeout(() => {
+                    setView(v => v === 'loading' ? 'landing' : v);
+                }, 10000);
+
+                return () => {
+                    if (unsubscribeProfile) unsubscribeProfile();
+                    unsubscribeAuth();
+                    clearTimeout(safetyTimeout);
+                };
+            }, []);
+
+            // ... (submitToGAS, fetchFromGAS, saveUserData, handleLogin, handleLogout - UNCHANGED) ...
             const submitToGAS = async (data) => { if (!GOOGLE_SCRIPT_URL) return; try { await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); } catch (e) { console.error("GAS Submit Error:", e); } };
             const fetchFromGAS = async () => { if (!GOOGLE_SCRIPT_URL) return null; try { const response = await fetch(GOOGLE_SCRIPT_URL); return await response.json(); } catch (e) { console.error("GAS Fetch Error:", e); return null; } };
             const saveUserData = async (newData) => { if (!user) return; const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'main'); const publicRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid); const finalData = { ...userData, ...newData, updatedAt: serverTimestamp() }; if (newData.maxLevel === undefined && finalData.maxLevel === undefined) finalData.maxLevel = 1; try { await setDoc(userRef, finalData, { merge: true }); await setDoc(publicRef, { uid: user.uid, name: finalData.name, school: finalData.school, province: finalData.province, points: finalData.points || 0, maxLevel: finalData.maxLevel || 1, rankTitle: getRank(finalData.points || 0).title }, { merge: true }); submitToGAS({ name: finalData.name, province: finalData.province, school: finalData.school, level: finalData.maxLevel || 1, points: finalData.points || 0, uid: user.uid }); setUserData(finalData); } catch (e) { console.error(e); } };
-            const handleLogin = async (e) => { e.preventDefault(); if (!loginForm.name || !loginForm.school) return; const initData = { name: loginForm.name, province: loginForm.province, school: loginForm.school, points: 0, maxLevel: 1, ownedBatiks: ['kawung'], powerups: { bomb: 1, hint: 3 }, createdAt: serverTimestamp() }; await saveUserData(initData); setView('menu'); };
+            const handleLogin = async (e) => { e.preventDefault(); if (!loginForm.name || !loginForm.school) return; const initData = { name: loginForm.name, province: loginForm.province, school: loginForm.school, points: 0, maxLevel: 1, ownedBatiks: ['kawung'], powerups: { bomb: 1, hint: 3 }, createdAt: serverTimestamp() }; 
+                try {
+                    await saveUserData(initData);
+                    setView('menu'); 
+                } catch(err) {
+                     alert("Gagal menyimpan data ke database. Cek koneksi atau izin database Anda.");
+                }
+            };
             const handleLogout = async () => { if (auth) { await signOut(auth); } setUser(null); setUserData(null); setMpSetup({ p1Name: '', p2Name: '', level: 1, p1Skin: 'kawung', p2Skin: 'kawung' }); setLoginForm({ name: '', province: PROVINCES[1], school: '' }); setView('landing'); };
 
+            // ... (Helpers and Game Logic - UNCHANGED) ...
             const generateQuestion = (level, isSpecial) => { if (isSpecial) { const n1 = Math.floor(Math.random() * 6) + 5; const n2 = Math.floor(Math.random() * 6) + 5; return { n1, n2, ans: n1 * n2 }; } let n1, n2; if (level <= 2) { n1 = Math.floor(Math.random() * 9) + 1; n2 = Math.floor(Math.random() * 9) + 1; } else if (level <= 5) { n1 = Math.floor(Math.random() * 90) + 10; n2 = Math.floor(Math.random() * 9) + 1; } else { n1 = Math.floor(Math.random() * 90) + 10; n2 = Math.floor(Math.random() * 90) + 10; } return { n1, n2, ans: n1 * n2 }; };
             const generateGridWithQuestions = (count, level) => { const indices = Array.from({ length: count }, (_, i) => i); for (let i = indices.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [indices[i], indices[j]] = [indices[j], indices[i]]; } const specialIndices = new Set(indices.slice(0, 5)); return Array(count).fill(null).map((_, i) => { const isSpecial = specialIndices.has(i); return { id: i, active: true, isSpecial: isSpecial, q: generateQuestion(level, isSpecial) }; }); };
             const initSingleGame = (batikId) => { const batik = BATIKS.find(b => b.id === batikId); setActiveBatik(batik); setScore(0); setMoves(30); setLevel(1); setLives(5); setIsGameOver(false); setPowerups(userData?.powerups || { bomb: 1, hint: 3 }); const newGrid = generateGridWithQuestions(20, 1); setGrid(newGrid); setView('game'); };
@@ -444,7 +465,6 @@
                 
                 if (level >= MAX_LEVEL_TO_WIN) {
                     alert(`LUAR BIASA! Kamu telah menamatkan semua level!\nSkor Akhir: ${score + bonus}`);
-                    setShowCertificateModal(true); 
                     setView('menu');
                 } else {
                     const nextLevel = level + 1;
@@ -471,14 +491,13 @@
 
             useEffect(() => { if (view === 'leaderboard' && user) { const q = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard'); const unsub = onSnapshot(q, (snapshot) => { const rawData = snapshot.docs.map(d => d.data()); let filtered = rawData.filter(d => { const matchProv = leaderboardFilter.province === 'Semua Provinsi' || d.province === leaderboardFilter.province; const matchSchool = d.school?.toLowerCase().includes(leaderboardFilter.school.toLowerCase()); const matchLevel = (d.maxLevel || 1) >= parseInt(leaderboardFilter.minLevel); const matchScore = (d.points || 0) >= parseInt(leaderboardFilter.minScore); return matchProv && matchSchool && matchLevel && matchScore; }); filtered.sort((a, b) => leaderboardFilter.sortBy === 'scoreDesc' ? (b.points || 0) - (a.points || 0) : (a.points || 0) - (b.points || 0)); setLeaderboardData(filtered.slice(0, 100)); }); return () => unsub(); } }, [view, leaderboardFilter, user]);
 
-            if (view === 'error') return React.createElement('div', { className: "min-h-dvh bg-red-50 flex flex-col items-center justify-center p-8 text-center" }, React.createElement('div', { className: "bg-white p-8 rounded-2xl shadow-xl max-w-lg" }, React.createElement(AlertTriangle, { size: 48, className: "text-red-500 mx-auto mb-4" }), React.createElement('h1', { className: "text-2xl font-bold text-red-900 mb-4" }, "Konfigurasi Firebase Hilang"), React.createElement('p', { className: "text-red-700 mb-4" }, "Game ini membutuhkan database Firebase untuk berjalan. Namun, konfigurasi tidak ditemukan."), React.createElement('button', { onClick: () => window.location.reload(), className: "bg-red-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-700" }, "Muat Ulang")));
+            if (view === 'error') return React.createElement('div', { className: "min-h-dvh bg-red-50 flex flex-col items-center justify-center p-8 text-center" }, React.createElement('div', { className: "bg-white p-8 rounded-2xl shadow-xl max-w-lg" }, React.createElement(AlertTriangle, { size: 48, className: "text-red-500 mx-auto mb-4" }), React.createElement('h1', { className: "text-2xl font-bold text-red-900 mb-4" }, "Konfigurasi Firebase Hilang / Error"), React.createElement('p', { className: "text-red-700 mb-4" }, authError || "Game ini membutuhkan database Firebase untuk berjalan. Namun, konfigurasi tidak ditemukan."), React.createElement('button', { onClick: () => window.location.reload(), className: "bg-red-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-700" }, "Muat Ulang")));
             if (view === 'loading') return React.createElement('div', { className: "min-h-dvh bg-amber-50 flex flex-col items-center justify-center p-4" }, React.createElement('div', { className: "animate-spin rounded-full h-12 w-12 border-b-2 border-amber-800 mb-4" }), React.createElement('h1', { className: "text-xl font-serif text-amber-900" }, "Memuat Batik Matika..."));
             if (view === 'landing') return React.createElement('div', { className: "min-h-dvh flex flex-col items-center justify-end p-8 relative overflow-hidden font-sans" }, React.createElement('div', { className: "absolute inset-0 z-0", style: { backgroundImage: "url('https://raw.githubusercontent.com/CikguTere/background.png/refs/heads/main/Desain%20tanpa%20judul%20(1).png')", backgroundSize: 'cover', backgroundPosition: 'top center', backgroundRepeat: 'no-repeat', opacity: 1 } }), React.createElement('div', { className: "relative z-10 w-full max-w-md mb-12" }, React.createElement('button', { onClick: () => setView('login'), className: "w-full py-4 bg-gradient-to-r from-amber-700 to-amber-900 text-white rounded-2xl font-bold text-xl shadow-2xl hover:shadow-amber-500/50 transform hover:-translate-y-1 transition-all flex items-center justify-center gap-3 border-2 border-amber-500 animate-bounce active:scale-95 touch-manipulation" }, React.createElement(Play, { fill: "white" }), "Mulai Petualangan")));
             if (view === 'login') return React.createElement('div', { className: "min-h-dvh bg-amber-50 flex flex-col items-center justify-center p-4 font-sans relative overflow-hidden" }, React.createElement('div', { className: "absolute top-4 left-4" }, React.createElement('button', { onClick: () => setView('landing'), className: "p-3 bg-white rounded-full shadow text-amber-900" }, React.createElement(ArrowLeft, null))), React.createElement('div', { className: "bg-white p-6 md:p-8 rounded-2xl shadow-xl w-full max-w-md z-10 border border-amber-200" }, React.createElement('div', { className: "text-center mb-6 md:mb-8" }, React.createElement('h1', { className: "text-2xl md:text-3xl font-bold text-amber-800 font-serif mb-2" }, "Identitas Pemain"), React.createElement('p', { className: "text-amber-600 text-xs md:text-sm" }, "Isi data diri untuk menyimpan skor")), React.createElement('form', { onSubmit: handleLogin, className: "space-y-4" }, React.createElement('div', null, React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Nama Lengkap"), React.createElement('div', { className: "relative" }, React.createElement(User, { className: "absolute left-3 top-3 w-5 h-5 text-gray-400" }), React.createElement('input', { required: true, type: "text", className: "w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none touch-manipulation", placeholder: "Isi namamu...", value: loginForm.name, onChange: e => setLoginForm({ ...loginForm, name: e.target.value }) }))), React.createElement('div', null, React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Provinsi"), React.createElement('div', { className: "relative" }, React.createElement(MapPin, { className: "absolute left-3 top-3 w-5 h-5 text-gray-400" }), React.createElement('select', { className: "w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white touch-manipulation", value: loginForm.province, onChange: e => setLoginForm({ ...loginForm, province: e.target.value }) }, PROVINCES.slice(1).map(p => React.createElement('option', { key: p, value: p }, p))))), React.createElement('div', null, React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Nama Sekolah"), React.createElement('div', { className: "relative" }, React.createElement(School, { className: "absolute left-3 top-3 w-5 h-5 text-gray-400" }), React.createElement('input', { required: true, type: "text", className: "w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none touch-manipulation", placeholder: "Contoh: SD Negeri 1 Jakarta", value: loginForm.school, onChange: e => setLoginForm({ ...loginForm, school: e.target.value }) }))), React.createElement('button', { type: "submit", className: "w-full bg-amber-700 text-white py-3 md:py-4 rounded-xl font-bold hover:bg-amber-800 transition-all shadow-lg mt-4 transform active:scale-95 touch-manipulation" }, "Lanjut Main"))));
 
             if (view === 'menu') {
                 const rank = getRank(userData?.points || 0);
-                const hasFinishedGame = (userData?.maxLevel || 1) > MAX_LEVEL_TO_WIN;
                 return React.createElement('div', { className: "min-h-dvh bg-amber-50 p-4 font-sans flex flex-col max-w-lg md:max-w-2xl mx-auto" },
                     React.createElement('div', { className: "bg-gradient-to-r from-amber-700 to-amber-900 rounded-2xl p-6 text-white shadow-lg mb-6 relative overflow-hidden" },
                         React.createElement('div', { className: "absolute right-0 top-0 opacity-20 w-32 h-32" }, React.createElement(BatikPattern, { type: "clouds" })),
@@ -496,10 +515,8 @@
                         React.createElement('button', { onClick: prepareMultiplayer, className: "col-span-2 bg-white p-6 md:p-8 rounded-2xl shadow-md border-b-4 border-blue-600 active:scale-95 transition-transform flex flex-col items-center justify-center gap-3 hover:bg-blue-50 touch-manipulation" }, React.createElement('div', { className: "w-16 h-16 md:w-20 md:h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-700" }, React.createElement(Users, { size: 32 })), React.createElement('span', { className: "font-bold text-xl md:text-2xl text-blue-900" }, "Multiplayer"), React.createElement('span', { className: "text-xs md:text-sm text-gray-500" }, "Mode Battle 1vs1")),
                         React.createElement('button', { onClick: () => setView('shop'), className: "bg-white p-4 md:p-6 rounded-2xl shadow-sm border-b-4 border-blue-600 active:scale-95 transition-transform flex flex-col items-center justify-center gap-2 touch-manipulation" }, React.createElement(ShoppingBag, { size: 24, className: "text-blue-600" }), React.createElement('span', { className: "font-bold text-base md:text-lg text-blue-900" }, "Toko Batik")),
                         React.createElement('button', { onClick: () => setView('leaderboard'), className: "bg-white p-4 md:p-6 rounded-2xl shadow-sm border-b-4 border-green-600 active:scale-95 transition-transform flex flex-col items-center justify-center gap-2 touch-manipulation" }, React.createElement(Trophy, { size: 24, className: "text-green-600" }), React.createElement('span', { className: "font-bold text-base md:text-lg text-green-900" }, "Peringkat")),
-                        hasFinishedGame && React.createElement('button', { onClick: () => setShowCertificateModal(true), className: "col-span-2 bg-gradient-to-r from-yellow-100 to-amber-100 p-4 rounded-2xl shadow-sm border-2 border-yellow-400 active:scale-95 transition-all flex items-center justify-center gap-3 touch-manipulation" }, React.createElement('div', { className: "w-10 h-10 bg-yellow-400 rounded-full flex items-center justify-center text-white font-bold" }, React.createElement(Award, { size: 20 })), React.createElement('div', { className: "text-left" }, React.createElement('div', { className: "font-bold text-amber-900" }, "Sertifikat Saya"), React.createElement('div', { className: "text-xs text-amber-700" }, "Download Pencapaianmu")))
                     ),
-                    React.createElement('div', { className: "mt-6" }, React.createElement('button', { onClick: handleLogout, className: "w-full py-3 md:py-4 border-2 border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-50 flex items-center justify-center gap-2 touch-manipulation" }, React.createElement(LogOut, { size: 20 }), " Keluar / Ganti Akun")),
-                    showCertificateModal && React.createElement(CertificateView, { user: userData, onClose: () => setShowCertificateModal(false) })
+                    React.createElement('div', { className: "mt-6" }, React.createElement('button', { onClick: handleLogout, className: "w-full py-3 md:py-4 border-2 border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-50 flex items-center justify-center gap-2 touch-manipulation" }, React.createElement(LogOut, { size: 20 }), " Keluar / Ganti Akun"))
                 );
             }
 
@@ -518,9 +535,7 @@
             }
             if (view === 'multiplayer-game') { const getBatikPattern = (id) => BATIKS.find(b => b.id === id)?.pattern || 'circles'; const formatTime = (s) => { const m = Math.floor(s / 60); const sec = s % 60; return `${m}:${sec < 10 ? '0' : ''}${sec}`; }; return React.createElement('div', { className: "h-dvh bg-slate-900 flex flex-row overflow-hidden font-sans relative" }, React.createElement('div', { className: "absolute top-0 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-1 rounded-b-xl font-mono font-bold border-x border-b border-slate-600 z-50 flex items-center gap-2 shadow-xl" }, React.createElement(Clock, { size: 16, className: mpState.timer < 60 ? "text-red-500 animate-pulse" : "text-white" }), React.createElement('span', { className: mpState.timer < 60 ? "text-red-500" : "" }, formatTime(mpState.timer))), React.createElement('div', { className: `flex-1 border-r-4 border-slate-700 relative p-1 md:p-2 flex flex-col items-center ${mpState.winner === 'p1' ? 'bg-amber-900/30' : ''}` }, React.createElement('div', { className: "w-full bg-slate-800 p-2 text-white flex justify-between rounded-lg mb-2 items-center" }, React.createElement('div', { className: "flex flex-col" }, React.createElement('span', { className: "font-bold text-amber-500 text-xs md:text-sm" }, mpSetup.p1Name || 'P1'), React.createElement('div', { className: "flex gap-0.5" }, [...Array(5)].map((_, i) => React.createElement(Heart, { key: i, size: 12, className: i < mpState.p1.lives ? "text-red-500" : "text-slate-600", fill: i < mpState.p1.lives ? "currentColor" : "none" })))), React.createElement('span', { className: "font-mono text-lg md:text-xl" }, mpState.p1.score)), React.createElement('div', { className: "relative w-full max-w-[400px] aspect-[5/4] rounded-lg overflow-hidden border-2 border-slate-600 mb-2 bg-slate-900/50" }, React.createElement('div', { className: "grid grid-cols-5 grid-rows-4 gap-0.5 w-full h-full" }, mpState.p1.grid.map(b => React.createElement(PuzzleBlock, { key: b.id, block: b, batikType: getBatikPattern(mpSetup.p1Skin), isExploding: mpExplodingId?.player === 'p1' && mpExplodingId?.id === b.id, onClick: () => handleMpBlockClick('p1', b) })))), React.createElement('div', { className: "flex-1 w-full bg-slate-800 rounded-lg p-1 flex flex-col justify-center overflow-hidden" }, mpState.p1.question ? React.createElement('div', { className: "text-center transform scale-90 md:scale-100" }, React.createElement('div', { className: "text-white text-lg md:text-xl font-mono mb-1" }, `${mpState.p1.question.n1} × ${mpState.p1.question.n2}`), React.createElement('div', { className: `h-8 bg-white rounded mb-1 text-lg font-bold flex items-center justify-center ${mpState.p1.feedback === 'wrong' ? 'text-red-600' : 'text-black'} ${mpState.p1.activeBlock?.isSpecial ? 'border-2 border-blue-500 text-blue-600 bg-blue-50' : ''}` }, mpState.p1.input), React.createElement(NumPad, { onInput: (v) => handleMpInput('p1', v), onDelete: () => handleMpDelete('p1'), onSubmit: () => handleMpSubmit('p1') })) : React.createElement('div', { className: "text-slate-500 text-center text-xs" }, "Pilih Blok")), mpState.winner === 'p1' && React.createElement('div', { className: "absolute inset-0 bg-black/60 flex items-center justify-center z-20" }, React.createElement('div', { className: "text-amber-400 text-2xl font-bold animate-bounce text-center" }, "MENANG!", React.createElement('div', { className: "text-sm text-white font-normal mt-2" }, "Lawan Kehabisan Nyawa/Waktu")))), React.createElement('div', { className: `flex-1 relative p-1 md:p-2 flex flex-col items-center ${mpState.winner === 'p2' ? 'bg-blue-900/30' : ''}` }, React.createElement('div', { className: "w-full bg-slate-800 p-2 text-white flex justify-between rounded-lg mb-2 items-center" }, React.createElement('div', { className: "flex flex-col" }, React.createElement('span', { className: "font-bold text-blue-500 text-xs md:text-sm" }, mpSetup.p2Name || 'P2'), React.createElement('div', { className: "flex gap-0.5" }, [...Array(5)].map((_, i) => React.createElement(Heart, { key: i, size: 12, className: i < mpState.p2.lives ? "text-red-500" : "text-slate-600", fill: i < mpState.p2.lives ? "currentColor" : "none" })))), React.createElement('span', { className: "font-mono text-lg md:text-xl" }, mpState.p2.score)), React.createElement('div', { className: "relative w-full max-w-[400px] aspect-[5/4] rounded-lg overflow-hidden border-2 border-slate-600 mb-2 bg-slate-900/50" }, React.createElement('div', { className: "grid grid-cols-5 grid-rows-4 gap-0.5 w-full h-full" }, mpState.p2.grid.map(b => React.createElement(PuzzleBlock, { key: b.id, block: b, batikType: getBatikPattern(mpSetup.p2Skin), onClick: () => handleMpBlockClick('p2', b) })))), React.createElement('div', { className: "flex-1 w-full bg-slate-800 rounded-lg p-1 flex flex-col justify-center overflow-hidden" }, mpState.p2.question ? React.createElement('div', { className: "text-center transform scale-90 md:scale-100" }, React.createElement('div', { className: "text-white text-lg md:text-xl font-mono mb-1" }, `${mpState.p2.question.n1} × ${mpState.p2.question.n2}`), React.createElement('div', { className: `h-8 bg-white rounded mb-1 text-lg font-bold flex items-center justify-center ${mpState.p2.feedback === 'wrong' ? 'text-red-600' : 'text-black'} ${mpState.p2.activeBlock?.isSpecial ? 'border-2 border-blue-500 text-blue-600 bg-blue-50' : ''}` }, mpState.p2.input), React.createElement(NumPad, { onInput: (v) => handleMpInput('p2', v), onDelete: () => handleMpDelete('p2'), onSubmit: () => handleMpSubmit('p2') })) : React.createElement('div', { className: "text-slate-500 text-center text-xs" }, "Pilih Blok")), mpState.winner === 'p2' && React.createElement('div', { className: "absolute inset-0 bg-black/60 flex items-center justify-center z-20" }, React.createElement('div', { className: "text-blue-400 text-2xl font-bold animate-bounce text-center" }, "MENANG!", React.createElement('div', { className: "text-sm text-white font-normal mt-2" }, "Lawan Kehabisan Nyawa/Waktu")))), mpState.winner === 'draw' && React.createElement('div', { className: "absolute inset-0 bg-black/80 flex items-center justify-center z-30" }, React.createElement('div', { className: "text-white text-3xl font-bold animate-pulse" }, "SERI! (Waktu Habis)")), React.createElement('div', { className: "absolute bottom-0 left-1/2 transform -translate-x-1/2 p-2 z-30" }, React.createElement('button', { onClick: () => setView('menu'), className: "bg-red-600 text-white px-4 py-1 rounded-full text-xs shadow-lg opacity-50 hover:opacity-100 touch-manipulation" }, "KELUAR"))); }
             if (view === 'leaderboard') return React.createElement('div', { className: "min-h-dvh bg-amber-50 p-4 max-w-lg md:max-w-2xl mx-auto flex flex-col" }, React.createElement('div', { className: "flex items-center gap-4 mb-4" }, React.createElement('button', { onClick: () => setView('menu'), className: "p-2 bg-white rounded-full shadow-sm" }, React.createElement(ArrowLeft, { size: 24, className: "text-amber-900" })), React.createElement('h2', { className: "text-2xl font-bold text-amber-900" }, "Papan Juara")), React.createElement('div', { className: "bg-white p-3 rounded-xl shadow-sm border border-amber-200 mb-4 space-y-2 text-sm" }, React.createElement('div', { className: "flex items-center gap-2 text-amber-900 font-bold mb-1" }, React.createElement(Filter, { size: 16 }), " Filter Leaderboard"), React.createElement('div', { className: "grid grid-cols-2 gap-2" }, React.createElement('select', { className: "p-2 border rounded bg-gray-50 w-full", value: leaderboardFilter.province, onChange: (e) => setLeaderboardFilter({...leaderboardFilter, province: e.target.value}) }, PROVINCES.map(p => React.createElement('option', { key: p, value: p }, p))), React.createElement('input', { type: "text", placeholder: "Cari Sekolah...", className: "p-2 border rounded bg-gray-50 w-full", value: leaderboardFilter.school, onChange: (e) => setLeaderboardFilter({...leaderboardFilter, school: e.target.value}) })), React.createElement('div', { className: "grid grid-cols-2 gap-2" }, React.createElement('div', { className: "flex items-center gap-2" }, React.createElement('span', { className: "text-xs text-gray-500" }, "Min Level:"), React.createElement('input', { type: "number", min: 1, className: "p-1 border rounded bg-gray-50 w-16", value: leaderboardFilter.minLevel, onChange: (e) => setLeaderboardFilter({...leaderboardFilter, minLevel: e.target.value}) })), React.createElement('select', { className: "p-2 border rounded bg-gray-50 w-full", value: leaderboardFilter.sortBy, onChange: (e) => setLeaderboardFilter({...leaderboardFilter, sortBy: e.target.value}) }, React.createElement('option', { value: "scoreDesc" }, "Skor Tertinggi"), React.createElement('option', { value: "scoreAsc" }, "Skor Terendah")))), React.createElement('div', { className: "bg-white rounded-2xl shadow-sm border border-amber-100 overflow-hidden flex-1" }, React.createElement('table', { className: "w-full text-xs" }, React.createElement('thead', { className: "bg-amber-50 text-amber-900" }, React.createElement('tr', null, React.createElement('th', { className: "p-3 text-left w-8" }, "#"), React.createElement('th', { className: "p-3 text-left" }, "Nama & Sekolah"), React.createElement('th', { className: "p-3 text-center" }, "Level"), React.createElement('th', { className: "p-3 text-right" }, "Poin"))), React.createElement('tbody', null, leaderboardData.length === 0 ? React.createElement('tr', null, React.createElement('td', { colSpan: 4, className: "p-8 text-center text-gray-400" }, "Tidak ada data yang cocok.")) : leaderboardData.map((d, i) => React.createElement('tr', { key: i, className: `border-b border-gray-100 ${d.uid === user?.uid ? 'bg-yellow-50' : ''}` }, React.createElement('td', { className: "p-3 font-bold text-gray-500" }, i + 1), React.createElement('td', { className: "p-3" }, React.createElement('div', { className: "font-bold text-gray-800" }, d.name), React.createElement('div', { className: "text-xs text-gray-500" }, d.school), React.createElement('div', { className: "text-[10px] text-amber-600 truncate max-w-[100px]" }, d.province)), React.createElement('td', { className: "p-3 text-center font-bold text-slate-600" }, d.maxLevel || 1), React.createElement('td', { className: "p-3 text-right font-mono font-bold text-amber-700" }, d.points?.toLocaleString())))))));
-
             if (view === 'shop') return React.createElement('div', { className: "min-h-dvh bg-amber-50 p-4 max-w-lg md:max-w-2xl mx-auto" }, React.createElement('div', { className: "flex items-center gap-4 mb-6" }, React.createElement('button', { onClick: () => setView('menu'), className: "p-2 bg-white rounded-full shadow-sm" }, React.createElement(ArrowLeft, { size: 24, className: "text-amber-900" })), React.createElement('h2', { className: "text-2xl font-bold text-amber-900" }, "Galeri Batik")), React.createElement('div', { className: "bg-amber-100 p-4 rounded-xl mb-6 flex justify-between items-center text-amber-900" }, React.createElement('span', { className: "font-medium" }, "Poin Kamu"), React.createElement('span', { className: "font-bold text-xl" }, userData?.points?.toLocaleString())), React.createElement('div', { className: "space-y-4" }, BATIKS.map(b => { const isOwned = userData?.ownedBatiks?.includes(b.id); return React.createElement('div', { key: b.id, className: "bg-white p-4 rounded-xl shadow-sm border border-amber-100 flex flex-col gap-2" }, React.createElement('div', { className: "flex items-center gap-4" }, React.createElement('div', { className: `w-16 h-16 rounded-lg overflow-hidden border-2 flex-shrink-0 ${isOwned ? 'border-green-500' : 'border-gray-300'}` }, React.createElement(BatikPattern, { type: b.pattern })), React.createElement('div', { className: "flex-1" }, React.createElement('h3', { className: "font-bold text-gray-800" }, b.name), React.createElement('p', { className: "text-xs text-gray-500" }, isOwned ? 'Sudah Dimiliki' : `${b.price} Poin`)), isOwned ? React.createElement('div', { className: "bg-green-100 text-green-700 px-3 py-1 rounded-lg font-bold text-xs" }, "Milikmu") : React.createElement('button', { onClick: () => { if ((userData?.points || 0) >= b.price) { const newPoints = (userData?.points || 0) - b.price; const newOwned = [...(userData?.ownedBatiks || []), b.id]; saveUserData({ points: newPoints, ownedBatiks: newOwned }); } }, disabled: (userData?.points || 0) < b.price, className: `px-3 py-1 rounded-lg font-bold text-xs flex items-center gap-1 ${(userData?.points || 0) >= b.price ? 'bg-amber-600 text-white shadow-md active:scale-95' : 'bg-gray-200 text-gray-400'}` }, React.createElement(Lock, { size: 12 }), " Beli")), React.createElement('div', { className: "bg-slate-50 p-2 rounded text-xs text-slate-600 italic border-l-2 border-slate-300" }, "💡 ", b.mathConcept), React.createElement('div', { className: "bg-yellow-50 p-2 rounded text-xs text-yellow-800 border-l-2 border-yellow-400 mt-1" }, "⚡ ", b.ruleDesc)); })));
-
             if (view === 'game') {
                 return React.createElement('div', { className: "min-h-dvh bg-slate-900 flex flex-col max-w-lg md:max-w-2xl mx-auto relative overflow-hidden font-sans" },
                     React.createElement('div', { className: "bg-slate-800 border-b border-slate-700 py-2 px-4 flex justify-between items-center text-xs text-slate-300" },
